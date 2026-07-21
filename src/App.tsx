@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import {
   PlaylistView,
@@ -8,6 +9,7 @@ import {
   type FormatOption,
 } from "./features/analyzer";
 import {
+  DownloadsDrawer,
   DownloadToaster,
   QueuePanel,
   useDownloadQueue,
@@ -15,6 +17,7 @@ import {
   type DownloadRequest,
   type DownloadSource,
   type QualityPreset,
+  type SaveTarget,
 } from "./features/downloader";
 import { SettingsDialog, useSettings } from "./features/settings";
 import { HistoryDrawer, RecentDownloads, useHistory } from "./features/history";
@@ -28,6 +31,7 @@ function buildRequest(
   return {
     url: source.url,
     title: source.title,
+    uploader: source.uploader,
     thumbnail: source.thumbnail,
     label: format.label,
     formatId: format.id,
@@ -45,11 +49,27 @@ function App() {
     onComplete: (request, filePath) => history.add(request, filePath),
     getMaxConcurrent: () => settings.settings.maxConcurrent,
   });
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const [dismissedToasts, setDismissedToasts] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  function dismissToast(id: string) {
+    setDismissedToasts((prev) => new Set(prev).add(id));
+  }
 
   const { status, result } = analyzer;
 
+  function saveTarget(): SaveTarget {
+    return {
+      destination: settings.settings.destination,
+      askEachTime: settings.settings.askEachTime,
+      template: settings.settings.namingTemplate,
+    };
+  }
+
   function enqueue(request: DownloadRequest) {
-    void queue.enqueue(request, settings.settings);
+    void queue.enqueue(request, saveTarget());
   }
 
   function download(
@@ -60,11 +80,15 @@ function App() {
     enqueue(buildRequest(source, format, kind));
   }
 
-  // Single-video result: bind the source from the analyzed video.
   function onVideoDownload(format: FormatOption, kind: DownloadKind) {
     if (result?.type !== "video") return;
     download(
-      { url: analyzer.url, title: result.data.title, thumbnail: result.data.thumbnail },
+      {
+        url: analyzer.url,
+        title: result.data.title,
+        uploader: result.data.uploader || undefined,
+        thumbnail: result.data.thumbnail,
+      },
       format,
       kind,
     );
@@ -74,15 +98,17 @@ function App() {
   // downloads always use the destination folder (no per-file prompt).
   function onDownloadAll(preset: QualityPreset) {
     if (result?.type !== "playlist") return;
-    const target = {
+    const target: SaveTarget = {
       destination: settings.settings.destination,
       askEachTime: false,
+      template: settings.settings.namingTemplate,
     };
     for (const entry of result.data.entries) {
       void queue.enqueue(
         {
           url: entry.url,
           title: entry.title,
+          uploader: entry.uploader ?? undefined,
           thumbnail: entry.thumbnail,
           label: preset.label,
           formatId: "",
@@ -97,10 +123,18 @@ function App() {
   }
 
   const showRecents = status !== "done" && status !== "loading";
+  const activeCount = queue.jobs.filter(
+    (j) => j.status === "active" || j.status === "queued",
+  ).length;
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-7 px-7 pb-12 pt-14">
-      <AppHeader onOpenHistory={history.open} onOpenSettings={settings.open} />
+      <AppHeader
+        onOpenDownloads={() => setDownloadsOpen(true)}
+        onOpenHistory={history.open}
+        onOpenSettings={settings.open}
+        activeCount={activeCount}
+      />
 
       <UrlBar
         value={analyzer.url}
@@ -134,7 +168,16 @@ function App() {
         />
       )}
 
-      <DownloadToaster jobs={queue.jobs} onDismiss={queue.remove} />
+      <DownloadToaster
+        jobs={queue.jobs}
+        dismissedIds={dismissedToasts}
+        onDismiss={dismissToast}
+      />
+      <DownloadsDrawer
+        queue={queue}
+        isOpen={downloadsOpen}
+        onClose={() => setDownloadsOpen(false)}
+      />
       <SettingsDialog settings={settings} />
       <HistoryDrawer history={history} onDownloadAgain={enqueue} />
     </main>

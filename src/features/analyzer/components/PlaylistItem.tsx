@@ -16,12 +16,6 @@ export function PlaylistItem({ entry, index, onDownload }: PlaylistItemProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const source: DownloadSource = {
-    url: entry.url,
-    title: entry.title,
-    thumbnail: entry.thumbnail,
-  };
-
   async function toggle() {
     const next = !expanded;
     setExpanded(next);
@@ -39,6 +33,12 @@ export function PlaylistItem({ entry, index, onDownload }: PlaylistItemProps) {
   }
 
   function handleFormat(format: FormatOption, kind: DownloadKind) {
+    const source: DownloadSource = {
+      url: entry.url,
+      title: entry.title,
+      thumbnail: entry.thumbnail,
+      uploader: meta?.uploader ?? entry.uploader ?? undefined,
+    };
     onDownload(source, format, kind);
   }
 

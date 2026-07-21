@@ -25,6 +25,7 @@ export interface PlaylistEntry {
   url: string;
   thumbnail: string;
   duration: string;
+  uploader: string | null;
 }
 
 export interface PlaylistMeta {

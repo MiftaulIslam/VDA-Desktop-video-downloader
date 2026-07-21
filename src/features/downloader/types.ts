@@ -14,12 +14,15 @@ export type DownloadEvent =
       eta: number | null;
     }
   | { type: "merging" }
+  | { type: "paused" }
+  | { type: "cancelled" }
   | { type: "done"; path: string }
   | { type: "error"; message: string };
 
 export interface DownloadRequest {
   url: string;
   title: string;
+  uploader?: string;
   thumbnail: string;
   label: string;
   formatId: string;
@@ -33,16 +36,18 @@ export interface DownloadRequest {
   maxHeight?: number;
 }
 
-/** Where a download should be written, derived from user settings. */
+/** Where/how a download should be written, derived from user settings. */
 export interface SaveTarget {
   destination: string;
   askEachTime: boolean;
+  template: string;
 }
 
 /** The video a format belongs to — enough to build a DownloadRequest. */
 export interface DownloadSource {
   url: string;
   title: string;
+  uploader?: string;
   thumbnail: string;
 }
 
@@ -53,7 +58,13 @@ export interface QualityPreset {
   maxHeight?: number;
 }
 
-export type JobStatus = "queued" | "active" | "done" | "error";
+export type JobStatus =
+  | "queued"
+  | "active"
+  | "paused"
+  | "done"
+  | "error"
+  | "cancelled";
 
 /** A single download tracked by the queue. */
 export interface DownloadJob {
@@ -65,6 +76,10 @@ export interface DownloadJob {
   percent: number;
   speed: number | null;
   eta: number | null;
+  downloaded: number;
+  total: number;
+  startedAt: number | null;
+  finishedAt: number | null;
   filePath: string | null;
   error: string | null;
 }

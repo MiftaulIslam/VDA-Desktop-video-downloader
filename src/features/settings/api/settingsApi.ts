@@ -30,7 +30,9 @@ export async function loadSettings(): Promise<Settings> {
   const destination = (await s.get<string>("destination")) ?? "";
   const askEachTime = (await s.get<boolean>("askEachTime")) ?? false;
   const maxConcurrent = (await s.get<number>("maxConcurrent")) ?? 3;
-  return { destination, askEachTime, maxConcurrent };
+  const namingTemplate =
+    (await s.get<string>("namingTemplate")) ?? "%(uploader)s - %(title)s";
+  return { destination, askEachTime, maxConcurrent, namingTemplate };
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
@@ -38,6 +40,7 @@ export async function saveSettings(settings: Settings): Promise<void> {
   await s.set("destination", settings.destination);
   await s.set("askEachTime", settings.askEachTime);
   await s.set("maxConcurrent", settings.maxConcurrent);
+  await s.set("namingTemplate", settings.namingTemplate);
   await s.save();
 }
 

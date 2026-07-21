@@ -215,6 +215,8 @@ struct FlatEntry {
     title: Option<String>,
     url: Option<String>,
     duration: Option<f64>,
+    uploader: Option<String>,
+    channel: Option<String>,
     #[serde(default)]
     thumbnails: Vec<FlatThumb>,
 }
@@ -234,6 +236,7 @@ pub struct PlaylistEntry {
     url: String,
     thumbnail: String,
     duration: String,
+    uploader: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -283,6 +286,7 @@ fn build_playlist(pl: FlatPlaylist) -> PlaylistMeta {
                     .duration
                     .map(format_duration)
                     .unwrap_or_else(|| "—".into()),
+                uploader: e.uploader.or(e.channel),
             })
         })
         .collect();

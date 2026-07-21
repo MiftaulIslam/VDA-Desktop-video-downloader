@@ -11,6 +11,7 @@ const DEFAULTS: Settings = {
   destination: "",
   askEachTime: false,
   maxConcurrent: 3,
+  namingTemplate: "%(uploader)s - %(title)s",
 };
 
 export interface UseSettings {
@@ -21,6 +22,7 @@ export interface UseSettings {
   changeDestination: () => Promise<void>;
   setAskEachTime: (value: boolean) => void;
   setMaxConcurrent: (value: number) => void;
+  setNamingTemplate: (value: string) => void;
 }
 
 /** Loads persisted settings on mount and keeps them in sync with disk. */
@@ -59,6 +61,11 @@ export function useSettings(): UseSettings {
     [settings, persist],
   );
 
+  const setNamingTemplate = useCallback(
+    (value: string) => persist({ ...settings, namingTemplate: value }),
+    [settings, persist],
+  );
+
   return {
     settings,
     isOpen,
@@ -67,5 +74,6 @@ export function useSettings(): UseSettings {
     changeDestination,
     setAskEachTime,
     setMaxConcurrent,
+    setNamingTemplate,
   };
 }

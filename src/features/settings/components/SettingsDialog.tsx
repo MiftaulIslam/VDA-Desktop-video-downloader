@@ -1,8 +1,14 @@
+import { expandTemplate } from "../../downloader/utils/naming";
 import type { UseSettings } from "../hooks/useSettings";
 
 interface SettingsDialogProps {
   settings: UseSettings;
 }
+
+const TEMPLATE_PRESETS = [
+  { label: "Title", value: "%(title)s" },
+  { label: "Uploader - Title", value: "%(uploader)s - %(title)s" },
+];
 
 export function SettingsDialog({ settings }: SettingsDialogProps) {
   const {
@@ -12,8 +18,16 @@ export function SettingsDialog({ settings }: SettingsDialogProps) {
     changeDestination,
     setAskEachTime,
     setMaxConcurrent,
+    setNamingTemplate,
   } = settings;
   if (!isOpen) return null;
+
+  const isPreset = TEMPLATE_PRESETS.some((p) => p.value === value.namingTemplate);
+  const previewName = expandTemplate(
+    value.namingTemplate,
+    "My Great Video",
+    "Awesome Channel",
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
@@ -123,6 +137,53 @@ export function SettingsDialog({ settings }: SettingsDialogProps) {
               ))}
             </select>
           </label>
+
+          {/* File naming */}
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-dim">
+              File naming
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {TEMPLATE_PRESETS.map((preset) => (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => setNamingTemplate(preset.value)}
+                  className={`rounded-lg border px-2.5 py-1 text-[13px] font-medium transition ${
+                    value.namingTemplate === preset.value
+                      ? "border-brand bg-brand/10 text-brand"
+                      : "border-line-strong bg-inputbg text-ink hover:border-brand"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setNamingTemplate(value.namingTemplate || "%(title)s")}
+                className={`rounded-lg border px-2.5 py-1 text-[13px] font-medium transition ${
+                  isPreset
+                    ? "border-line-strong bg-inputbg text-ink hover:border-brand"
+                    : "border-brand bg-brand/10 text-brand"
+                }`}
+              >
+                Custom
+              </button>
+            </div>
+            <input
+              type="text"
+              value={value.namingTemplate}
+              onChange={(e) => setNamingTemplate(e.currentTarget.value)}
+              spellCheck={false}
+              placeholder="%(uploader)s - %(title)s"
+              className="rounded-lg border border-line-strong bg-inputbg px-3 py-2 text-sm text-ink outline-none transition focus:border-brand"
+            />
+            <p className="text-xs text-dim">
+              Tokens: <code className="text-ink">%(title)s</code>,{" "}
+              <code className="text-ink">%(uploader)s</code> · Preview:{" "}
+              <span className="text-ink">{previewName}.mp4</span>
+            </p>
+          </div>
         </div>
       </div>
     </div>

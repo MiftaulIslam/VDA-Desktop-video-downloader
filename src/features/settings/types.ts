@@ -5,4 +5,6 @@ export interface Settings {
   askEachTime: boolean;
   /** Max downloads allowed to run at the same time. */
   maxConcurrent: number;
+  /** Filename template, e.g. "%(uploader)s - %(title)s". */
+  namingTemplate: string;
 }
