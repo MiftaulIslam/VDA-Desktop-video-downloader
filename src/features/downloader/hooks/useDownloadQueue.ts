@@ -24,6 +24,7 @@ function makeId(): string {
 
 export interface UseDownloadQueueOptions {
   onComplete?: (request: DownloadRequest, filePath: string) => void;
+  onError?: (request: DownloadRequest, message: string) => void;
   getMaxConcurrent: () => number;
 }
 
@@ -56,6 +57,8 @@ export function useDownloadQueue(
   const startedRef = useRef<Set<string>>(new Set());
   const onCompleteRef = useRef(options.onComplete);
   onCompleteRef.current = options.onComplete;
+  const onErrorRef = useRef(options.onError);
+  onErrorRef.current = options.onError;
   const getMaxRef = useRef(options.getMaxConcurrent);
   getMaxRef.current = options.getMaxConcurrent;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -156,6 +159,7 @@ export function useDownloadQueue(
           error: event.message,
           finishedAt: Date.now(),
         });
+        onErrorRef.current?.(job.request, event.message);
         settle(job.id);
         break;
     }

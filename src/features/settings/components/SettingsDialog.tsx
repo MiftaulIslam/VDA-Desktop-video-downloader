@@ -10,6 +10,34 @@ const TEMPLATE_PRESETS = [
   { label: "Uploader - Title", value: "%(uploader)s - %(title)s" },
 ];
 
+interface ToggleRowProps {
+  label: string;
+  hint: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}
+
+function ToggleRow({ label, hint, checked, onChange }: ToggleRowProps) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4">
+      <span className="flex flex-col">
+        <span className="text-sm font-medium text-ink">{label}</span>
+        <span className="text-xs text-dim">{hint}</span>
+      </span>
+      <span className="relative inline-flex shrink-0">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.currentTarget.checked)}
+          className="peer sr-only"
+        />
+        <span className="h-6 w-11 rounded-full bg-inputbg ring-1 ring-line-strong transition peer-checked:bg-brand peer-checked:ring-brand" />
+        <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5" />
+      </span>
+    </label>
+  );
+}
+
 export function SettingsDialog({ settings }: SettingsDialogProps) {
   const {
     settings: value,
@@ -19,6 +47,12 @@ export function SettingsDialog({ settings }: SettingsDialogProps) {
     setAskEachTime,
     setMaxConcurrent,
     setNamingTemplate,
+    setRunOnStartup,
+    setStartMinimized,
+    setStartHidden,
+    setMinimizeToTray,
+    setMonitorClipboard,
+    setClipboardMode,
   } = settings;
   if (!isOpen) return null;
 
@@ -137,6 +171,74 @@ export function SettingsDialog({ settings }: SettingsDialogProps) {
               ))}
             </select>
           </label>
+
+          {/* Startup & tray */}
+          <div className="flex flex-col gap-4">
+            <span className="text-xs font-semibold uppercase tracking-wider text-dim">
+              Startup
+            </span>
+            <ToggleRow
+              label="Run on Windows startup"
+              hint="Launch automatically when you sign in."
+              checked={value.runOnStartup}
+              onChange={setRunOnStartup}
+            />
+            <ToggleRow
+              label="Start minimized"
+              hint="Open with the window minimized."
+              checked={value.startMinimized}
+              onChange={setStartMinimized}
+            />
+            <ToggleRow
+              label="Start hidden in tray"
+              hint="Open without a visible window; use the tray icon."
+              checked={value.startHidden}
+              onChange={setStartHidden}
+            />
+            <ToggleRow
+              label="Close to tray"
+              hint="Closing the window hides it instead of quitting."
+              checked={value.minimizeToTray}
+              onChange={setMinimizeToTray}
+            />
+          </div>
+
+          {/* Clipboard monitor */}
+          <div className="flex flex-col gap-4">
+            <span className="text-xs font-semibold uppercase tracking-wider text-dim">
+              Clipboard
+            </span>
+            <ToggleRow
+              label="Monitor clipboard"
+              hint="Detect YouTube links when you copy them."
+              checked={value.monitorClipboard}
+              onChange={setMonitorClipboard}
+            />
+            {value.monitorClipboard && (
+              <div className="flex items-center justify-between gap-4">
+                <span className="flex flex-col">
+                  <span className="text-sm font-medium text-ink">
+                    On detected link
+                  </span>
+                  <span className="text-xs text-dim">
+                    Ask first, or analyze it immediately.
+                  </span>
+                </span>
+                <select
+                  value={value.clipboardMode}
+                  onChange={(e) =>
+                    setClipboardMode(
+                      e.currentTarget.value as "popup" | "auto",
+                    )
+                  }
+                  className="shrink-0 rounded-lg border border-line-strong bg-inputbg px-3 py-2 text-sm font-medium text-ink outline-none transition hover:border-brand focus:border-brand"
+                >
+                  <option value="popup">Show popup</option>
+                  <option value="auto">Automatically</option>
+                </select>
+              </div>
+            )}
+          </div>
 
           {/* File naming */}
           <div className="flex flex-col gap-2">

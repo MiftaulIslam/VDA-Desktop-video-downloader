@@ -1,5 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
-import type { AnalyzeResult, VideoMeta } from "../types";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import type {
+  AnalyzeResult,
+  PlaylistSizeEvent,
+  VideoMeta,
+} from "../types";
 
 /**
  * Data-access boundary for the analyzer feature.
@@ -16,4 +20,17 @@ export async function analyze(url: string): Promise<AnalyzeResult> {
 /** Full metadata for one video (used to lazily load a playlist entry). */
 export async function fetchMetadata(url: string): Promise<VideoMeta> {
   return invoke<VideoMeta>("fetch_metadata", { url });
+}
+
+/**
+ * Resolve real download sizes for every playlist entry. Results stream back
+ * per entry via the callback; resolves once all entries are processed.
+ */
+export async function fetchPlaylistSizes(
+  urls: string[],
+  onEvent: (event: PlaylistSizeEvent) => void,
+): Promise<void> {
+  const channel = new Channel<PlaylistSizeEvent>();
+  channel.onmessage = onEvent;
+  await invoke("fetch_playlist_sizes", { urls, onEvent: channel });
 }

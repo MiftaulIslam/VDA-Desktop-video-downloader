@@ -16,6 +16,9 @@ dist-ssr
 # See src-tauri/binaries/README.md
 src-tauri/binaries/*.exe
 
+# Updater signing keys — NEVER commit these
+.keys/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

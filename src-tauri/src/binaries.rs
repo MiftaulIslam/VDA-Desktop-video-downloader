@@ -8,6 +8,25 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// Common yt-dlp args applied to every call: retries and request throttling to
+/// avoid bot detection.
+pub fn common_args() -> Vec<String> {
+    vec![
+        "--retries".into(),
+        "5".into(),
+        "--fragment-retries".into(),
+        "5".into(),
+        "--extractor-retries".into(),
+        "3".into(),
+        "--sleep-requests".into(),
+        "1".into(),
+        // Querying ios/android alongside `default` guarantees a downloadable
+        // format is found and keeps analyze/download consistent.
+        "--extractor-args".into(),
+        "youtube:player_client=default,ios,android".into(),
+    ]
+}
+
 /// Directory that holds the bundled binaries.
 ///
 /// In development this is `src-tauri/binaries` (baked in at compile time via

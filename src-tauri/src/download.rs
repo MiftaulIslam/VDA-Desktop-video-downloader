@@ -200,6 +200,7 @@ fn run(
 
     let mut cmd = binaries::command(binaries::yt_dlp());
     cmd.args(["-f", &format_arg])
+        .args(binaries::common_args())
         .args(["--no-playlist", "--no-warnings", "--newline", "--continue"])
         .args([
             "--progress-template",

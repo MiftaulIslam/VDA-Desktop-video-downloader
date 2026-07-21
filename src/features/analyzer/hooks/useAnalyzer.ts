@@ -10,7 +10,7 @@ export interface UseAnalyzer {
   result: AnalyzeResult | null;
   isLoading: boolean;
   setUrl: (value: string) => void;
-  analyze: () => Promise<void>;
+  analyze: (overrideUrl?: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -38,8 +38,11 @@ export function useAnalyzer(): UseAnalyzer {
     setResult(null);
   }, []);
 
-  const analyze = useCallback(async () => {
-    const trimmed = url.trim();
+  const analyze = useCallback(
+    async (overrideUrl?: string) => {
+    const hasOverride = typeof overrideUrl === "string";
+    const trimmed = (hasOverride ? overrideUrl : url).trim();
+    if (hasOverride) setUrlState(overrideUrl);
     if (!isValidUrl(trimmed)) {
       setError("Please paste a valid http(s) URL.");
       setStatus("error");
@@ -58,7 +61,9 @@ export function useAnalyzer(): UseAnalyzer {
       setError(typeof e === "string" ? e : "Something went wrong.");
       setStatus("error");
     }
-  }, [url]);
+    },
+    [url],
+  );
 
   return {
     url,
