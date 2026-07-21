@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
-use std::process::Stdio;
+use std::path::Path;
+use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use serde::Serialize;
@@ -22,12 +24,36 @@ pub enum DownloadEvent {
         eta: Option<u64>,
     },
     Merging,
+    Paused,
+    Cancelled,
     Done {
         path: String,
     },
     Error {
         message: String,
     },
+}
+
+// ---- Process registry (for pause / cancel) ----
+
+#[derive(Clone, Copy, PartialEq)]
+enum Intent {
+    Running,
+    Paused,
+    Cancelled,
+}
+
+struct JobHandle {
+    child: Child,
+    intent: Intent,
+}
+
+type Jobs = Arc<Mutex<HashMap<String, JobHandle>>>;
+
+/// Tracks running child processes so downloads can be paused/cancelled.
+#[derive(Clone, Default)]
+pub struct DownloadRegistry {
+    jobs: Jobs,
 }
 
 fn parse_u64(s: &str) -> u64 {
@@ -39,17 +65,9 @@ fn parse_f64_opt(s: &str) -> Option<f64> {
 }
 
 fn parse_u64_opt(s: &str) -> Option<u64> {
-    s.trim()
-        .parse::<f64>()
-        .ok()
-        .map(|v| v.round() as u64)
+    s.trim().parse::<f64>().ok().map(|v| v.round() as u64)
 }
 
-/// Parse a single yt-dlp output line and emit the matching event.
-///
-/// `video_id` is the requested video format id; a progress line whose format
-/// id matches it is the video stream. For audio-only downloads `is_audio`
-/// forces every line to the "audio" stage.
 fn handle_line(
     line: &str,
     on_event: &Channel<DownloadEvent>,
@@ -97,8 +115,6 @@ fn handle_line(
     }
 }
 
-/// Read a child pipe to EOF, handling each line. Returns the raw text so the
-/// caller can extract an error message on failure.
 fn drain<R: Read>(
     reader: R,
     on_event: Channel<DownloadEvent>,
@@ -116,29 +132,76 @@ fn drain<R: Read>(
     collected
 }
 
-fn build_format_arg(format_id: &str, kind: &str, needs_mux: bool) -> String {
-    if kind == "video" && needs_mux {
-        // Video-only stream: mux with the best matching audio track.
-        format!("{id}+bestaudio[ext=m4a]/{id}+bestaudio/best", id = format_id)
-    } else {
-        format_id.to_string()
+/// Build the yt-dlp `-f` selector. Returns `(selector, will_merge)`.
+fn build_format_arg(
+    format_id: &str,
+    kind: &str,
+    needs_mux: bool,
+    max_height: Option<u32>,
+) -> (String, bool) {
+    if kind == "audio" {
+        if max_height.is_some() || format_id.is_empty() {
+            return ("bestaudio[ext=m4a]/bestaudio/best".to_string(), false);
+        }
+        return (format_id.to_string(), false);
+    }
+
+    if let Some(h) = max_height {
+        return (
+            format!("bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"),
+            true,
+        );
+    }
+    if needs_mux {
+        return (
+            format!("{id}+bestaudio[ext=m4a]/{id}+bestaudio/best", id = format_id),
+            true,
+        );
+    }
+    (format_id.to_string(), false)
+}
+
+/// Remove a cancelled download's output and intermediate/partial files.
+fn cleanup_partials(output_path: &str) {
+    let path = Path::new(output_path);
+    let _ = std::fs::remove_file(path);
+    if let (Some(dir), Some(stem)) = (
+        path.parent(),
+        path.file_stem().and_then(|s| s.to_str()),
+    ) {
+        let prefix = format!("{stem}.");
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with(&prefix) {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run(
+    id: String,
     url: String,
     format_id: String,
     kind: String,
     needs_mux: bool,
+    max_height: Option<u32>,
     output_path: String,
+    jobs: Jobs,
     on_event: Channel<DownloadEvent>,
 ) -> Result<(), String> {
-    let format_arg = build_format_arg(&format_id, &kind, needs_mux);
+    let (format_arg, will_merge) =
+        build_format_arg(&format_id, &kind, needs_mux, max_height);
     let ffmpeg_loc = binaries::ffmpeg_location();
 
     let mut cmd = binaries::command(binaries::yt_dlp());
     cmd.args(["-f", &format_arg])
-        .args(["--no-playlist", "--no-warnings", "--newline"])
+        .args(binaries::common_args())
+        .args(["--no-playlist", "--no-warnings", "--newline", "--continue"])
         .args([
             "--progress-template",
             "download:DLP@@%(progress.downloaded_bytes)s@@%(progress.total_bytes)s@@%(progress.total_bytes_estimate)s@@%(progress.speed)s@@%(progress.eta)s@@%(info.format_id)s",
@@ -147,7 +210,7 @@ fn run(
         .arg(&ffmpeg_loc)
         .args(["-o", &output_path]);
 
-    if kind == "video" && needs_mux {
+    if will_merge {
         cmd.args(["--merge-output-format", "mp4"]);
     }
 
@@ -159,6 +222,17 @@ fn run(
 
     let stdout = child.stdout.take().ok_or("No stdout")?;
     let stderr = child.stderr.take().ok_or("No stderr")?;
+
+    // Register the running process so it can be paused/cancelled.
+    if let Ok(mut map) = jobs.lock() {
+        map.insert(
+            id.clone(),
+            JobHandle {
+                child,
+                intent: Intent::Running,
+            },
+        );
+    }
 
     let merged = Arc::new(AtomicBool::new(false));
     let is_audio = kind == "audio";
@@ -179,42 +253,94 @@ fn run(
     let out_text = out_handle.join().unwrap_or_default();
     let err_text = err_handle.join().unwrap_or_default();
 
-    let status = child
-        .wait()
-        .map_err(|e| format!("yt-dlp failed: {e}"))?;
+    // Reclaim the child (readers have hit EOF = process exited or was killed).
+    let handle = jobs.lock().ok().and_then(|mut m| m.remove(&id));
+    let (mut child, intent) = match handle {
+        Some(h) => (h.child, h.intent),
+        None => return Ok(()),
+    };
+    let status = child.wait().map_err(|e| format!("yt-dlp failed: {e}"))?;
 
-    if status.success() {
-        let _ = on_event.send(DownloadEvent::Done {
-            path: output_path.clone(),
-        });
-        Ok(())
-    } else {
-        let message = err_text
-            .lines()
-            .chain(out_text.lines())
-            .rev()
-            .find(|l| l.contains("ERROR"))
-            .map(|l| l.trim().to_string())
-            .unwrap_or_else(|| "Download failed.".to_string());
-        let _ = on_event.send(DownloadEvent::Error {
-            message: message.clone(),
-        });
-        Err(message)
+    match intent {
+        Intent::Paused => {
+            let _ = on_event.send(DownloadEvent::Paused);
+            Ok(())
+        }
+        Intent::Cancelled => {
+            cleanup_partials(&output_path);
+            let _ = on_event.send(DownloadEvent::Cancelled);
+            Ok(())
+        }
+        Intent::Running => {
+            if status.success() {
+                let _ = on_event.send(DownloadEvent::Done {
+                    path: output_path.clone(),
+                });
+                Ok(())
+            } else {
+                let message = err_text
+                    .lines()
+                    .chain(out_text.lines())
+                    .rev()
+                    .find(|l| l.contains("ERROR"))
+                    .map(|l| l.trim().to_string())
+                    .unwrap_or_else(|| "Download failed.".to_string());
+                let _ = on_event.send(DownloadEvent::Error {
+                    message: message.clone(),
+                });
+                Err(message)
+            }
+        }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn download_format(
+    id: String,
     url: String,
     format_id: String,
     kind: String,
     needs_mux: bool,
+    max_height: Option<u32>,
     output_path: String,
+    registry: tauri::State<'_, DownloadRegistry>,
     on_event: Channel<DownloadEvent>,
 ) -> Result<(), String> {
+    let jobs = registry.jobs.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        run(url, format_id, kind, needs_mux, output_path, on_event)
+        run(
+            id,
+            url,
+            format_id,
+            kind,
+            needs_mux,
+            max_height,
+            output_path,
+            jobs,
+            on_event,
+        )
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))?
+}
+
+#[tauri::command]
+pub fn pause_download(id: String, registry: tauri::State<'_, DownloadRegistry>) {
+    if let Ok(mut map) = registry.jobs.lock() {
+        if let Some(h) = map.get_mut(&id) {
+            h.intent = Intent::Paused;
+            let _ = h.child.kill();
+        }
+    }
+}
+
+#[tauri::command]
+pub fn cancel_download(id: String, registry: tauri::State<'_, DownloadRegistry>) {
+    if let Ok(mut map) = registry.jobs.lock() {
+        if let Some(h) = map.get_mut(&id) {
+            h.intent = Intent::Cancelled;
+            let _ = h.child.kill();
+        }
+    }
 }

@@ -1,6 +1,10 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::thread;
 
 use serde::{Deserialize, Serialize};
+use tauri::ipc::Channel;
 
 use crate::binaries;
 
@@ -202,22 +206,111 @@ fn build_meta(dump: YtDump) -> VideoMeta {
     }
 }
 
-#[tauri::command]
-pub async fn fetch_metadata(url: String) -> Result<VideoMeta, String> {
-    let url = url.trim().to_string();
-    if url.is_empty() {
-        return Err("No URL provided.".into());
-    }
+// ---- Playlist support ----
 
+#[derive(Deserialize)]
+struct FlatThumb {
+    url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct FlatEntry {
+    id: Option<String>,
+    title: Option<String>,
+    url: Option<String>,
+    duration: Option<f64>,
+    uploader: Option<String>,
+    channel: Option<String>,
+    #[serde(default)]
+    thumbnails: Vec<FlatThumb>,
+}
+
+#[derive(Deserialize)]
+struct FlatPlaylist {
+    title: Option<String>,
+    playlist_count: Option<u32>,
+    #[serde(default)]
+    entries: Vec<FlatEntry>,
+}
+
+#[derive(Serialize)]
+pub struct PlaylistEntry {
+    id: String,
+    title: String,
+    url: String,
+    thumbnail: String,
+    duration: String,
+    duration_seconds: Option<f64>,
+    uploader: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PlaylistMeta {
+    title: String,
+    count: u32,
+    entries: Vec<PlaylistEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum AnalyzeResult {
+    Video { data: VideoMeta },
+    Playlist { data: PlaylistMeta },
+}
+
+/// Whether a URL should be treated as a playlist. A bare `watch?v=…&list=…`
+/// or a `/shorts/…` URL is treated as a single video.
+fn is_playlist_url(url: &str) -> bool {
+    let has_list = url.contains("list=");
+    let is_single_video = url.contains("watch?v=")
+        || url.contains("/shorts/")
+        || url.contains("youtu.be/");
+    (url.contains("/playlist") && has_list) || (has_list && !is_single_video)
+}
+
+fn build_playlist(pl: FlatPlaylist) -> PlaylistMeta {
+    let entries: Vec<PlaylistEntry> = pl
+        .entries
+        .into_iter()
+        .filter_map(|e| {
+            let url = e.url?;
+            let id = e.id.unwrap_or_default();
+            let thumbnail = e
+                .thumbnails
+                .last()
+                .and_then(|t| t.url.clone())
+                .unwrap_or_else(|| {
+                    format!("https://i.ytimg.com/vi/{id}/hqdefault.jpg")
+                });
+            Some(PlaylistEntry {
+                id,
+                title: e.title.unwrap_or_else(|| "Untitled".into()),
+                url,
+                thumbnail,
+                duration: e
+                    .duration
+                    .map(format_duration)
+                    .unwrap_or_else(|| "—".into()),
+                duration_seconds: e.duration,
+                uploader: e.uploader.or(e.channel),
+            })
+        })
+        .collect();
+
+    let count = pl.playlist_count.unwrap_or(entries.len() as u32);
+    PlaylistMeta {
+        title: pl.title.unwrap_or_else(|| "Playlist".into()),
+        count,
+        entries,
+    }
+}
+
+/// Run yt-dlp with the given args and return stdout, mapping failures to a
+/// user-facing error message.
+async fn yt_dlp_json(mut args: Vec<String>) -> Result<Vec<u8>, String> {
+    args.extend(binaries::common_args());
     let output = tauri::async_runtime::spawn_blocking(move || {
-        binaries::command(binaries::yt_dlp())
-            .args([
-                "--dump-single-json",
-                "--no-playlist",
-                "--no-warnings",
-                &url,
-            ])
-            .output()
+        binaries::command(binaries::yt_dlp()).args(&args).output()
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))?
@@ -232,9 +325,196 @@ pub async fn fetch_metadata(url: String) -> Result<VideoMeta, String> {
             .to_string();
         return Err(msg);
     }
+    Ok(output.stdout)
+}
 
-    let dump: YtDump = serde_json::from_slice(&output.stdout)
+async fn video_meta(url: String) -> Result<VideoMeta, String> {
+    let stdout = yt_dlp_json(vec![
+        "--dump-single-json".into(),
+        "--no-playlist".into(),
+        "--no-warnings".into(),
+        url,
+    ])
+    .await?;
+
+    let dump: YtDump = serde_json::from_slice(&stdout)
         .map_err(|e| format!("Could not parse video info: {e}"))?;
-
     Ok(build_meta(dump))
+}
+
+/// Fetch a single video's full metadata (also used to lazily load a
+/// playlist entry's formats).
+#[tauri::command]
+pub async fn fetch_metadata(url: String) -> Result<VideoMeta, String> {
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return Err("No URL provided.".into());
+    }
+    video_meta(url).await
+}
+
+/// Analyze any URL: returns a single video or a flat playlist listing.
+#[tauri::command]
+pub async fn analyze(url: String) -> Result<AnalyzeResult, String> {
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return Err("No URL provided.".into());
+    }
+
+    if is_playlist_url(&url) {
+        let stdout = yt_dlp_json(vec![
+            "--dump-single-json".into(),
+            "--flat-playlist".into(),
+            "--no-warnings".into(),
+            url,
+        ])
+        .await?;
+        let pl: FlatPlaylist = serde_json::from_slice(&stdout)
+            .map_err(|e| format!("Could not parse playlist: {e}"))?;
+        Ok(AnalyzeResult::Playlist {
+            data: build_playlist(pl),
+        })
+    } else {
+        Ok(AnalyzeResult::Video {
+            data: video_meta(url).await?,
+        })
+    }
+}
+
+// ---- Playlist size estimation ----
+
+/// Combined download size (bytes) available at a given resolution.
+#[derive(Clone, Serialize)]
+pub struct HeightSize {
+    height: u32,
+    bytes: u64,
+}
+
+/// Streamed to the frontend as each playlist entry's real sizes resolve.
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PlaylistSizeEvent {
+    /// Sizes resolved for one entry.
+    Item {
+        url: String,
+        /// Combined (muxed) size per available resolution, largest first.
+        video: Vec<HeightSize>,
+        /// Best audio-only download size.
+        audio: Option<u64>,
+    },
+    /// Could not resolve sizes for this entry (skipped in totals).
+    Failed { url: String },
+    /// All entries have been processed.
+    Done,
+}
+
+/// Compute per-resolution (muxed) sizes and the best audio-only size for one
+/// video's raw yt-dlp dump.
+fn entry_sizes(dump: &YtDump) -> (Vec<HeightSize>, Option<u64>) {
+    // Best audio-only track (highest bitrate that reports a size).
+    let mut best_audio: Option<&YtFormat> = None;
+    for f in &dump.formats {
+        if !f.is_audio_only() {
+            continue;
+        }
+        match best_audio {
+            None => best_audio = Some(f),
+            Some(cur) => {
+                if f.abr.unwrap_or(0.0) > cur.abr.unwrap_or(0.0) {
+                    best_audio = Some(f);
+                }
+            }
+        }
+    }
+    let audio_bytes = best_audio.and_then(|f| f.size());
+
+    // Largest video track per resolution (proxy for best quality).
+    let mut best_by_height: HashMap<u32, &YtFormat> = HashMap::new();
+    for f in &dump.formats {
+        if !f.has_video() {
+            continue;
+        }
+        let h = f.height.unwrap();
+        let cur = best_by_height.entry(h).or_insert(f);
+        if f.size().unwrap_or(0) > cur.size().unwrap_or(0) {
+            *cur = f;
+        }
+    }
+
+    let mut video: Vec<HeightSize> = best_by_height
+        .iter()
+        .filter_map(|(h, f)| {
+            let mut bytes = f.size()?;
+            // Video-only streams are muxed with audio on download.
+            if !f.has_audio() {
+                bytes += audio_bytes.unwrap_or(0);
+            }
+            Some(HeightSize {
+                height: *h,
+                bytes,
+            })
+        })
+        .collect();
+    video.sort_unstable_by(|a, b| b.height.cmp(&a.height));
+
+    (video, audio_bytes)
+}
+
+/// Fetch and parse a single video's sizes synchronously (runs on a worker
+/// thread). Returns `None` on any failure so the entry is skipped in totals.
+fn fetch_one_size(url: &str) -> Option<(Vec<HeightSize>, Option<u64>)> {
+    let output = binaries::command(binaries::yt_dlp())
+        .args(["--dump-single-json", "--no-playlist", "--no-warnings", url])
+        .args(binaries::common_args())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let dump: YtDump = serde_json::from_slice(&output.stdout).ok()?;
+    Some(entry_sizes(&dump))
+}
+
+/// Resolve accurate download sizes for every entry in a playlist. Runs yt-dlp
+/// per entry across a small worker pool and streams results back as they land.
+#[tauri::command]
+pub async fn fetch_playlist_sizes(
+    urls: Vec<String>,
+    on_event: Channel<PlaylistSizeEvent>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let urls = Arc::new(urls);
+        let next = Arc::new(AtomicUsize::new(0));
+        let workers = 4.min(urls.len().max(1));
+
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let urls = urls.clone();
+                let next = next.clone();
+                let ev = on_event.clone();
+                thread::spawn(move || loop {
+                    let i = next.fetch_add(1, Ordering::SeqCst);
+                    if i >= urls.len() {
+                        break;
+                    }
+                    let url = urls[i].clone();
+                    match fetch_one_size(&url) {
+                        Some((video, audio)) => {
+                            let _ = ev.send(PlaylistSizeEvent::Item { url, video, audio });
+                        }
+                        None => {
+                            let _ = ev.send(PlaylistSizeEvent::Failed { url });
+                        }
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            let _ = h.join();
+        }
+        let _ = on_event.send(PlaylistSizeEvent::Done);
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))
 }

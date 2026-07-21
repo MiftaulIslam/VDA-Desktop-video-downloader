@@ -1,9 +1,16 @@
 interface AppHeaderProps {
+  onOpenDownloads: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
+  activeCount: number;
 }
 
-export function AppHeader({ onOpenHistory, onOpenSettings }: AppHeaderProps) {
+export function AppHeader({
+  onOpenDownloads,
+  onOpenHistory,
+  onOpenSettings,
+  activeCount,
+}: AppHeaderProps) {
   return (
     <header className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between">
@@ -13,6 +20,11 @@ export function AppHeader({ onOpenHistory, onOpenSettings }: AppHeaderProps) {
         </div>
 
         <div className="flex items-center gap-1.5">
+          <IconButton label="Downloads" onClick={onOpenDownloads} badge={activeCount}>
+            <path d="M12 3v12" />
+            <path d="m7 10 5 5 5-5" />
+            <path d="M5 21h14" />
+          </IconButton>
           <IconButton label="History" onClick={onOpenHistory}>
             <path d="M3 3v5h5" />
             <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
@@ -32,17 +44,18 @@ export function AppHeader({ onOpenHistory, onOpenSettings }: AppHeaderProps) {
 interface IconButtonProps {
   label: string;
   onClick: () => void;
+  badge?: number;
   children: React.ReactNode;
 }
 
-function IconButton({ label, onClick, children }: IconButtonProps) {
+function IconButton({ label, onClick, badge, children }: IconButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-elev text-dim transition hover:border-brand/50 hover:text-brand"
+      className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-elev text-dim transition hover:border-brand/50 hover:text-brand"
     >
       <svg
         width="18"
@@ -56,6 +69,11 @@ function IconButton({ label, onClick, children }: IconButtonProps) {
       >
         {children}
       </svg>
+      {badge != null && badge > 0 && (
+        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-white">
+          {badge}
+        </span>
+      )}
     </button>
   );
 }

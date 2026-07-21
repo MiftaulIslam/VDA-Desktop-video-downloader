@@ -18,6 +18,34 @@ export function formatEta(seconds: number | null): string {
   return `${s}s left`;
 }
 
+export function formatSize(bytes: number | null): string {
+  if (!bytes || bytes <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+export function formatClock(epochMs: number | null): string {
+  if (epochMs == null) return "—";
+  return new Date(epochMs).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+/** Parent folder of a file path (Windows or POSIX). */
+export function folderOf(path: string | null): string {
+  if (!path) return "—";
+  const idx = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+  return idx > 0 ? path.slice(0, idx) : path;
+}
+
 export function stageLabel(
   stage: "video" | "audio" | "merging" | null,
 ): string {

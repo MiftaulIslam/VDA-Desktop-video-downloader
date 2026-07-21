@@ -1,13 +1,36 @@
-import { invoke } from "@tauri-apps/api/core";
-import type { VideoMeta } from "../types";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import type {
+  AnalyzeResult,
+  PlaylistSizeEvent,
+  VideoMeta,
+} from "../types";
 
 /**
  * Data-access boundary for the analyzer feature.
  *
- * Isolates the Tauri IPC call so the rest of the feature depends on this
- * abstraction rather than on `@tauri-apps/api` directly. Swapping the
- * backend (mock, HTTP, different command) only touches this file.
+ * Isolates the Tauri IPC calls so the rest of the feature depends on these
+ * abstractions rather than on `@tauri-apps/api` directly.
  */
+
+/** Analyze any URL — resolves to a single video or a playlist listing. */
+export async function analyze(url: string): Promise<AnalyzeResult> {
+  return invoke<AnalyzeResult>("analyze", { url });
+}
+
+/** Full metadata for one video (used to lazily load a playlist entry). */
 export async function fetchMetadata(url: string): Promise<VideoMeta> {
   return invoke<VideoMeta>("fetch_metadata", { url });
+}
+
+/**
+ * Resolve real download sizes for every playlist entry. Results stream back
+ * per entry via the callback; resolves once all entries are processed.
+ */
+export async function fetchPlaylistSizes(
+  urls: string[],
+  onEvent: (event: PlaylistSizeEvent) => void,
+): Promise<void> {
+  const channel = new Channel<PlaylistSizeEvent>();
+  channel.onmessage = onEvent;
+  await invoke("fetch_playlist_sizes", { urls, onEvent: channel });
 }

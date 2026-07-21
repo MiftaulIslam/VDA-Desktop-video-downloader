@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vda",
+  "productName": "VDA",
   "version": "0.1.0",
   "identifier": "com.user.vda",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "vda",
+        "title": "VDA",
         "width": 800,
         "height": 600
       }
@@ -24,6 +24,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "externalBin": ["binaries/yt-dlp", "binaries/ffmpeg", "binaries/ffprobe"],
     "icon": [
       "icons/32x32.png",
@@ -32,5 +33,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/MiftaulIslam/VDA-Desktop-video-downloader/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcyQUMyMTgzN0MzNjQxMUEKUldRYVFUWjhneUdzY2k2ODNqbEFHT0tST09DWUtrTHNHTFAzVTg0VlhzcHB1aGlqTlJNVHlIOTUK"
+    }
   }
 }

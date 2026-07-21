@@ -14,35 +14,72 @@ export type DownloadEvent =
       eta: number | null;
     }
   | { type: "merging" }
+  | { type: "paused" }
+  | { type: "cancelled" }
   | { type: "done"; path: string }
   | { type: "error"; message: string };
 
 export interface DownloadRequest {
   url: string;
   title: string;
+  uploader?: string;
   thumbnail: string;
   label: string;
   formatId: string;
   ext: string;
   kind: DownloadKind;
   needsMux: boolean;
+  /**
+   * When set, download the best quality ≤ this height instead of a specific
+   * format id (used by playlist "Download all" presets).
+   */
+  maxHeight?: number;
 }
 
-/** Where a download should be written, derived from user settings. */
+/** Where/how a download should be written, derived from user settings. */
 export interface SaveTarget {
   destination: string;
   askEachTime: boolean;
+  template: string;
 }
 
-export type DownloadStatus = "idle" | "active" | "done" | "error";
+/** The video a format belongs to — enough to build a DownloadRequest. */
+export interface DownloadSource {
+  url: string;
+  title: string;
+  uploader?: string;
+  thumbnail: string;
+}
 
-export interface DownloadState {
-  status: DownloadStatus;
+/** A "Download all" quality preset (best quality ≤ maxHeight, or audio). */
+export interface QualityPreset {
+  label: string;
+  kind: DownloadKind;
+  maxHeight?: number;
+}
+
+export type JobStatus =
+  | "queued"
+  | "active"
+  | "paused"
+  | "done"
+  | "error"
+  | "cancelled";
+
+/** A single download tracked by the queue. */
+export interface DownloadJob {
+  id: string;
+  request: DownloadRequest;
+  outputPath: string;
+  status: JobStatus;
   stage: DownloadStage | null;
   percent: number;
   speed: number | null;
   eta: number | null;
+  downloaded: number;
+  total: number;
+  startedAt: number | null;
+  finishedAt: number | null;
   filePath: string | null;
   error: string | null;
-  title: string;
 }

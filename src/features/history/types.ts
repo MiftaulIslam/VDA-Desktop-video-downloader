@@ -7,4 +7,6 @@ export interface HistoryRecord {
   filePath: string;
   /** Epoch milliseconds. */
   downloadedAt: number;
+  /** Hidden from the recent-downloads strip (still shown in the drawer). */
+  hiddenFromRecent?: boolean;
 }

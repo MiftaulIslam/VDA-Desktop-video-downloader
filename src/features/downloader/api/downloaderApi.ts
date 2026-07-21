@@ -1,20 +1,20 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import type { DownloadEvent, SaveTarget } from "../types";
+import type { DownloadEvent } from "../types";
 
 /**
- * Data-access boundary for the downloader feature. Every call into the
- * Tauri runtime (IPC command, native dialog, OS opener) lives here so the
- * hook and components depend on these functions, not on `@tauri-apps/*`.
+ * Data-access boundary for the downloader feature. Every call into the Tauri
+ * runtime (IPC command, native dialog, OS opener) lives here.
  */
 
 export interface StartDownloadArgs {
+  id: string;
   url: string;
   formatId: string;
   kind: "video" | "audio";
   needsMux: boolean;
+  maxHeight?: number;
   outputPath: string;
   onEvent: (event: DownloadEvent) => void;
 }
@@ -31,21 +31,25 @@ export async function chooseSavePath(
   return path ?? null;
 }
 
-/**
- * Resolve the output path for a download. Prompts with a save dialog when the
- * user opted to be asked each time (or no default destination is set),
- * otherwise writes straight into the configured destination folder.
- * Returns null if the user cancelled.
- */
-export async function resolveOutputPath(
-  defaultName: string,
-  ext: string,
-  target: SaveTarget,
-): Promise<string | null> {
-  if (target.askEachTime || !target.destination) {
-    return chooseSavePath(defaultName, ext);
-  }
-  return join(target.destination, `${defaultName}.${ext}`);
+export interface ResolveOutputArgs {
+  destination: string;
+  template: string;
+  title: string;
+  uploader: string | null;
+  ext: string;
+  explicit?: string | null;
+}
+
+/** Backend-resolved final path (template expansion + auto-rename on collision). */
+export async function resolveOutput(args: ResolveOutputArgs): Promise<string> {
+  return invoke<string>("resolve_output_path", {
+    destination: args.destination,
+    template: args.template,
+    title: args.title,
+    uploader: args.uploader,
+    ext: args.ext,
+    explicit: args.explicit ?? null,
+  });
 }
 
 export async function startDownload(args: StartDownloadArgs): Promise<void> {
@@ -53,13 +57,23 @@ export async function startDownload(args: StartDownloadArgs): Promise<void> {
   channel.onmessage = args.onEvent;
 
   await invoke("download_format", {
+    id: args.id,
     url: args.url,
     formatId: args.formatId,
     kind: args.kind,
     needsMux: args.needsMux,
+    maxHeight: args.maxHeight ?? null,
     outputPath: args.outputPath,
     onEvent: channel,
   });
+}
+
+export async function pauseDownload(id: string): Promise<void> {
+  await invoke("pause_download", { id });
+}
+
+export async function cancelDownload(id: string): Promise<void> {
+  await invoke("cancel_download", { id });
 }
 
 export async function openFile(path: string): Promise<void> {
