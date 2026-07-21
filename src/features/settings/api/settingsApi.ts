@@ -29,13 +29,15 @@ export async function loadSettings(): Promise<Settings> {
   const s = await store();
   const destination = (await s.get<string>("destination")) ?? "";
   const askEachTime = (await s.get<boolean>("askEachTime")) ?? false;
-  return { destination, askEachTime };
+  const maxConcurrent = (await s.get<number>("maxConcurrent")) ?? 3;
+  return { destination, askEachTime, maxConcurrent };
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
   const s = await store();
   await s.set("destination", settings.destination);
   await s.set("askEachTime", settings.askEachTime);
+  await s.set("maxConcurrent", settings.maxConcurrent);
   await s.save();
 }
 

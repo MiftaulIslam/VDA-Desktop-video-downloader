@@ -15,6 +15,7 @@ export interface StartDownloadArgs {
   formatId: string;
   kind: "video" | "audio";
   needsMux: boolean;
+  maxHeight?: number;
   outputPath: string;
   onEvent: (event: DownloadEvent) => void;
 }
@@ -57,6 +58,7 @@ export async function startDownload(args: StartDownloadArgs): Promise<void> {
     formatId: args.formatId,
     kind: args.kind,
     needsMux: args.needsMux,
+    maxHeight: args.maxHeight ?? null,
     outputPath: args.outputPath,
     onEvent: channel,
   });

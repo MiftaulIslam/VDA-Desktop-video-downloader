@@ -26,6 +26,11 @@ export interface DownloadRequest {
   ext: string;
   kind: DownloadKind;
   needsMux: boolean;
+  /**
+   * When set, download the best quality ≤ this height instead of a specific
+   * format id (used by playlist "Download all" presets).
+   */
+  maxHeight?: number;
 }
 
 /** Where a download should be written, derived from user settings. */
@@ -34,15 +39,32 @@ export interface SaveTarget {
   askEachTime: boolean;
 }
 
-export type DownloadStatus = "idle" | "active" | "done" | "error";
+/** The video a format belongs to — enough to build a DownloadRequest. */
+export interface DownloadSource {
+  url: string;
+  title: string;
+  thumbnail: string;
+}
 
-export interface DownloadState {
-  status: DownloadStatus;
+/** A "Download all" quality preset (best quality ≤ maxHeight, or audio). */
+export interface QualityPreset {
+  label: string;
+  kind: DownloadKind;
+  maxHeight?: number;
+}
+
+export type JobStatus = "queued" | "active" | "done" | "error";
+
+/** A single download tracked by the queue. */
+export interface DownloadJob {
+  id: string;
+  request: DownloadRequest;
+  outputPath: string;
+  status: JobStatus;
   stage: DownloadStage | null;
   percent: number;
   speed: number | null;
   eta: number | null;
   filePath: string | null;
   error: string | null;
-  title: string;
 }

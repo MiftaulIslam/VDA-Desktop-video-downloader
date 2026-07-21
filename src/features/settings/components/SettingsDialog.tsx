@@ -5,8 +5,14 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ settings }: SettingsDialogProps) {
-  const { settings: value, isOpen, close, changeDestination, setAskEachTime } =
-    settings;
+  const {
+    settings: value,
+    isOpen,
+    close,
+    changeDestination,
+    setAskEachTime,
+    setMaxConcurrent,
+  } = settings;
   if (!isOpen) return null;
 
   return (
@@ -93,6 +99,29 @@ export function SettingsDialog({ settings }: SettingsDialogProps) {
               <span className="h-6 w-11 rounded-full bg-inputbg ring-1 ring-line-strong transition peer-checked:bg-brand peer-checked:ring-brand" />
               <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5" />
             </span>
+          </label>
+
+          {/* Max simultaneous downloads */}
+          <label className="flex items-center justify-between gap-4">
+            <span className="flex flex-col">
+              <span className="text-sm font-medium text-ink">
+                Max simultaneous downloads
+              </span>
+              <span className="text-xs text-dim">
+                How many downloads run at the same time.
+              </span>
+            </span>
+            <select
+              value={value.maxConcurrent}
+              onChange={(e) => setMaxConcurrent(Number(e.currentTarget.value))}
+              className="shrink-0 rounded-lg border border-line-strong bg-inputbg px-3 py-2 text-sm font-medium text-ink outline-none transition hover:border-brand focus:border-brand"
+            >
+              {[1, 2, 3, 4, 5].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
       </div>

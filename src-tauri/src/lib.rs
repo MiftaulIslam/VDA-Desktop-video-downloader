@@ -10,6 +10,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            metadata::analyze,
             metadata::fetch_metadata,
             download::download_format,
             system::open_file

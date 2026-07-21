@@ -1,9 +1,13 @@
-export { useDownloader } from "./hooks/useDownloader";
+export { useDownloadQueue } from "./hooks/useDownloadQueue";
+export type { UseDownloadQueue } from "./hooks/useDownloadQueue";
 export { DownloadButton } from "./components/DownloadButton";
-export { DownloadDialog } from "./components/DownloadDialog";
+export { DownloadToaster } from "./components/DownloadToaster";
+export { QueuePanel } from "./components/QueuePanel";
 export type {
   DownloadKind,
   DownloadRequest,
-  DownloadState,
+  DownloadJob,
   SaveTarget,
+  DownloadSource,
+  QualityPreset,
 } from "./types";

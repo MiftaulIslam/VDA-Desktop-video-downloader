@@ -1,13 +1,13 @@
 import { useCallback, useState } from "react";
-import { fetchMetadata } from "../api/analyzerApi";
+import { analyze as analyzeUrl } from "../api/analyzerApi";
 import { isValidUrl } from "../utils/url";
-import type { AnalyzeStatus, VideoMeta } from "../types";
+import type { AnalyzeResult, AnalyzeStatus } from "../types";
 
 export interface UseAnalyzer {
   url: string;
   status: AnalyzeStatus;
   error: string;
-  meta: VideoMeta | null;
+  result: AnalyzeResult | null;
   isLoading: boolean;
   setUrl: (value: string) => void;
   analyze: () => Promise<void>;
@@ -24,7 +24,7 @@ export function useAnalyzer(): UseAnalyzer {
   const [url, setUrlState] = useState("");
   const [status, setStatus] = useState<AnalyzeStatus>("idle");
   const [error, setError] = useState("");
-  const [meta, setMeta] = useState<VideoMeta | null>(null);
+  const [result, setResult] = useState<AnalyzeResult | null>(null);
 
   const setUrl = useCallback((value: string) => {
     setUrlState(value);
@@ -35,7 +35,7 @@ export function useAnalyzer(): UseAnalyzer {
     setUrlState("");
     setStatus("idle");
     setError("");
-    setMeta(null);
+    setResult(null);
   }, []);
 
   const analyze = useCallback(async () => {
@@ -47,12 +47,12 @@ export function useAnalyzer(): UseAnalyzer {
     }
 
     setError("");
-    setMeta(null);
+    setResult(null);
     setStatus("loading");
 
     try {
-      const result = await fetchMetadata(trimmed);
-      setMeta(result);
+      const analyzed = await analyzeUrl(trimmed);
+      setResult(analyzed);
       setStatus("done");
     } catch (e) {
       setError(typeof e === "string" ? e : "Something went wrong.");
@@ -64,7 +64,7 @@ export function useAnalyzer(): UseAnalyzer {
     url,
     status,
     error,
-    meta,
+    result,
     isLoading: status === "loading",
     setUrl,
     analyze,

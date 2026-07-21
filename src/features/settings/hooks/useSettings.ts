@@ -7,7 +7,11 @@ import {
 } from "../api/settingsApi";
 import type { Settings } from "../types";
 
-const DEFAULTS: Settings = { destination: "", askEachTime: false };
+const DEFAULTS: Settings = {
+  destination: "",
+  askEachTime: false,
+  maxConcurrent: 3,
+};
 
 export interface UseSettings {
   settings: Settings;
@@ -16,6 +20,7 @@ export interface UseSettings {
   close: () => void;
   changeDestination: () => Promise<void>;
   setAskEachTime: (value: boolean) => void;
+  setMaxConcurrent: (value: number) => void;
 }
 
 /** Loads persisted settings on mount and keeps them in sync with disk. */
@@ -49,6 +54,11 @@ export function useSettings(): UseSettings {
     [settings, persist],
   );
 
+  const setMaxConcurrent = useCallback(
+    (value: number) => persist({ ...settings, maxConcurrent: value }),
+    [settings, persist],
+  );
+
   return {
     settings,
     isOpen,
@@ -56,5 +66,6 @@ export function useSettings(): UseSettings {
     close: () => setIsOpen(false),
     changeDestination,
     setAskEachTime,
+    setMaxConcurrent,
   };
 }

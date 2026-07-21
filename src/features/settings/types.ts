@@ -3,4 +3,6 @@ export interface Settings {
   destination: string;
   /** When true, prompt for a save location on every download. */
   askEachTime: boolean;
+  /** Max downloads allowed to run at the same time. */
+  maxConcurrent: number;
 }

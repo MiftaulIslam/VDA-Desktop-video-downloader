@@ -116,13 +116,36 @@ fn drain<R: Read>(
     collected
 }
 
-fn build_format_arg(format_id: &str, kind: &str, needs_mux: bool) -> String {
-    if kind == "video" && needs_mux {
-        // Video-only stream: mux with the best matching audio track.
-        format!("{id}+bestaudio[ext=m4a]/{id}+bestaudio/best", id = format_id)
-    } else {
-        format_id.to_string()
+/// Build the yt-dlp `-f` selector. Returns `(selector, will_merge)`.
+fn build_format_arg(
+    format_id: &str,
+    kind: &str,
+    needs_mux: bool,
+    max_height: Option<u32>,
+) -> (String, bool) {
+    if kind == "audio" {
+        // Audio preset (no specific id) → best audio (prefer m4a); else id.
+        if max_height.is_some() || format_id.is_empty() {
+            return ("bestaudio[ext=m4a]/bestaudio/best".to_string(), false);
+        }
+        return (format_id.to_string(), false);
     }
+
+    // Video: a height ceiling (playlist "Download all") picks the best
+    // quality ≤ H per video and always muxes to mp4.
+    if let Some(h) = max_height {
+        return (
+            format!("bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"),
+            true,
+        );
+    }
+    if needs_mux {
+        return (
+            format!("{id}+bestaudio[ext=m4a]/{id}+bestaudio/best", id = format_id),
+            true,
+        );
+    }
+    (format_id.to_string(), false)
 }
 
 fn run(
@@ -130,10 +153,12 @@ fn run(
     format_id: String,
     kind: String,
     needs_mux: bool,
+    max_height: Option<u32>,
     output_path: String,
     on_event: Channel<DownloadEvent>,
 ) -> Result<(), String> {
-    let format_arg = build_format_arg(&format_id, &kind, needs_mux);
+    let (format_arg, will_merge) =
+        build_format_arg(&format_id, &kind, needs_mux, max_height);
     let ffmpeg_loc = binaries::ffmpeg_location();
 
     let mut cmd = binaries::command(binaries::yt_dlp());
@@ -147,7 +172,7 @@ fn run(
         .arg(&ffmpeg_loc)
         .args(["-o", &output_path]);
 
-    if kind == "video" && needs_mux {
+    if will_merge {
         cmd.args(["--merge-output-format", "mp4"]);
     }
 
@@ -209,11 +234,12 @@ pub async fn download_format(
     format_id: String,
     kind: String,
     needs_mux: bool,
+    max_height: Option<u32>,
     output_path: String,
     on_event: Channel<DownloadEvent>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        run(url, format_id, kind, needs_mux, output_path, on_event)
+        run(url, format_id, kind, needs_mux, max_height, output_path, on_event)
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))?
